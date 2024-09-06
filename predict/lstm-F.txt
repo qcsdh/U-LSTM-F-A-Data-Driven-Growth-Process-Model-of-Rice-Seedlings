@@ -1,0 +1,185 @@
+#LSTM更改+图
+import pandas as pd
+import numpy as np
+from sklearn.preprocessing import MinMaxScaler
+from keras.models import Sequential
+from keras.layers import LSTM, Dense, Layer
+from keras.optimizers import Adam
+import keras.backend as K
+import matplotlib.pyplot as plt
+from datetime import datetime
+from keras.utils import plot_model
+from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+from sklearn.metrics import mean_squared_error, mean_absolute_error
+
+# 自定义注意力层
+class AttentionLayer(Layer):
+    def __init__(self, **kwargs):
+        super(AttentionLayer, self).__init__(**kwargs)
+
+    def build(self, input_shape):
+        self.W = self.add_weight(name='attention_weight', 
+                                 shape=(input_shape[-1], 1),
+                                 initializer='random_normal',
+                                 trainable=True)
+        self.b = self.add_weight(name='attention_bias', 
+                                 shape=(input_shape[1], 1),
+                                 initializer='zeros',
+                                 trainable=True)
+        super(AttentionLayer, self).build(input_shape)
+
+    def call(self, x):
+        e = K.tanh(K.dot(x, self.W) + self.b)
+        a = K.softmax(e, axis=1)
+        output = x * a
+        return K.sum(output, axis=1)
+
+    def compute_output_shape(self, input_shape):
+        return (input_shape[0], input_shape[-1])
+
+# 构建带注意力机制的 LSTM 模型卷，积层和池化层，使用了双层 LSTM，并在全连接层前添加了 Dropout 和 L2 正则化
+def build_complex_attention_model(input_shape):
+    model = Sequential()
+    model.add(Conv1D(filters=64, kernel_size=2, activation='relu', input_shape=input_shape))
+    model.add(MaxPooling1D(pool_size=2))
+    model.add(LSTM(50, return_sequences=True))
+    model.add(AttentionLayer())  # 添加自定义的注意力层
+    model.add(LSTM(50, return_sequences=False))
+    model.add(Dropout(0.5))
+    model.add(Dense(25, activation='relu', kernel_regularizer='l2'))
+    model.add(Dense(1))
+    model.compile(optimizer='adam', loss='mean_squared_error')
+    return model
+
+# 数据预处理函数
+def create_dataset(data, window_size=3):
+    X, y = [], []
+    for i in range(len(data) - window_size):
+        window = data[i:(i + window_size), 0]
+        X.append(window)
+        y.append(data[i + window_size, 0])
+    return np.array(X), np.array(y)
+
+# 叶龄数据
+leaf_age_data = {
+     "Date": [],
+    "Average Leaf Age": []
+}
+
+# 茎长数据
+stem_length_data = {
+    "Date": [],
+    "Average Stem Length": []
+}
+
+# 转换为 DataFrame
+leaf_age_df = pd.DataFrame(leaf_age_data)
+stem_length_df = pd.DataFrame(stem_length_data)
+
+# 创建和标准化数据集
+scaler_leaf = MinMaxScaler(feature_range=(0, 1))
+scaler_stem = MinMaxScaler(feature_range=(0, 1))
+scaled_leaf_data = scaler_leaf.fit_transform(leaf_age_df['Average Leaf Age'].values.reshape(-1,1))
+scaled_stem_data = scaler_stem.fit_transform(stem_length_df['Average Stem Length'].values.reshape(-1,1))
+leaf_X, leaf_y = create_dataset(scaled_leaf_data, window_size)
+stem_X, stem_y = create_dataset(scaled_stem_data, window_size)
+leaf_X = leaf_X.reshape((leaf_X.shape[0], leaf_X.shape[1], 1))
+stem_X = stem_X.reshape((stem_X.shape[0], stem_X.shape[1], 1))
+
+# 训练模型
+leaf_model = build_attention_model((3, 1))
+leaf_model.fit(leaf_X, leaf_y, batch_size=1, epochs=200, verbose=1)
+stem_model = build_attention_model((3, 1))
+stem_model.fit(stem_X, stem_y, batch_size=1, epochs=200, verbose=1)
+
+# 进行预测
+leaf_predict = leaf_model.predict(leaf_X)
+stem_predict = stem_model.predict(stem_X)
+leaf_predict = scaler_leaf.inverse_transform(leaf_predict)
+stem_predict = scaler_stem.inverse_transform(stem_predict)
+
+# 绘制曲线图
+plt.figure(figsize=(12, 6))
+
+# 绘制叶龄曲线图
+plt.subplot(2, 1, 1)
+plt.plot(leaf_age_df['Date'], leaf_age_df['Average Leaf Age'], label='Actual Leaf Age')
+plt.plot(leaf_age_df['Date'][window_size:], leaf_predict.flatten(), label='Predicted Leaf Age', linestyle='--')
+plt.title('Leaf Age Prediction')
+plt.xlabel('Date')
+plt.ylabel('Average Leaf Age')
+plt.legend()
+
+# 绘制茎长曲线图
+plt.subplot(2, 1, 2)
+plt.plot(stem_length_df['Date'], stem_length_df['Average Stem Length'], label='Actual Stem Length')
+plt.plot(stem_length_df['Date'][window_size:], stem_predict.flatten(), label='Predicted Stem Length', linestyle='--')
+plt.title('Stem Length Prediction')
+plt.xlabel('Date')
+plt.ylabel('Average Stem Length')
+plt.legend()
+plt.tight_layout()
+plt.show()
+
+# 计算指标函数
+def calculate_metrics(actual, predicted):
+    mse = mean_squared_error(actual, predicted)
+    rmse = np.sqrt(mse)
+    mae = mean_absolute_error(actual, predicted)
+    mape = np.mean(np.abs((actual - predicted) / actual)) * 100
+    return mse, rmse, mae, mape
+
+# 计算叶龄指标
+leaf_mse, leaf_rmse, leaf_mae, leaf_mape = calculate_metrics(leaf_age_df['Average Leaf Age'][window_size:], leaf_predict.flatten())
+
+# 计算茎长指标
+stem_mse, stem_rmse, stem_mae, stem_mape = calculate_metrics(stem_length_df['Average Stem Length'][window_size:], stem_predict.flatten())
+
+# 打印指标
+print("Leaf Age Metrics:")
+print("MSE: {:.3f}".format(round(leaf_mse, 3)))
+print("RMSE: {:.3f}".format(round(leaf_rmse, 3)))
+print("MAE: {:.3f}".format(round(leaf_mae, 3)))
+print("MAPE: {:.3f}".format(round(leaf_mape, 3)))
+
+print("Stem Length Metrics:")
+print("MSE: {:.3f}".format(round(stem_mse, 3)))
+print("RMSE: {:.3f}".format(round(stem_rmse, 3)))
+print("MAE: {:.3f}".format(round(stem_mae, 3)))
+print("MAPE: {:.3f}".format(round(stem_mape, 3)))
+
+
+# 创建评估图形
+plt.figure(figsize=(12, 6))
+
+# 创建评估图形
+plt.figure(figsize=(8, 6))
+
+# MSE图形
+plt.subplot(2, 2, 1)
+plt.bar(['Leaf Age', 'Stem Length'], [mse_leaf, mse_stem])
+plt.title('Mean Squared Error (MSE)')
+plt.ylabel('MSE')
+
+# RMSE图形
+plt.subplot(2, 2, 2)
+plt.bar(['Leaf Age', 'Stem Length'], [rmse_leaf, rmse_stem])
+plt.title('Root Mean Squared Error (RMSE)')
+plt.ylabel('RMSE')
+
+# MAE图形
+plt.subplot(2, 2, 3)
+plt.bar(['Leaf Age', 'Stem Length'], [mae_leaf, mae_stem])
+plt.title('Mean Absolute Error (MAE)')
+plt.ylabel('MAE')
+
+# MAPE图形
+plt.subplot(2, 2, 4)
+plt.bar(['Leaf Age', 'Stem Length'], [mape_leaf, mape_stem])
+plt.title('Mean Absolute Percentage Error (MAPE)')
+plt.ylabel('MAPE')
+
+plt.tight_layout()
+plt.show()
+
+

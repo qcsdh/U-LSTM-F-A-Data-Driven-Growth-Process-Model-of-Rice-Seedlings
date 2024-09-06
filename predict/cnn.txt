@@ -1,0 +1,151 @@
+#CNN更改+图
+import pandas as pd
+import numpy as np
+from sklearn.preprocessing import MinMaxScaler
+from keras.models import Sequential
+from keras.layers import Conv1D, MaxPooling1D, Flatten, Dense
+import matplotlib.pyplot as plt
+
+# 数据准备
+data_leaf_age = {}  # 叶龄数据
+data_stem_length = {}  # 茎长数据
+
+df_leaf_age = pd.DataFrame(data_leaf_age)
+df_stem_length = pd.DataFrame(data_stem_length)
+
+# 数据预处理函数
+def create_dataset(data, window_size=3):
+    X, y = [], []
+    for i in range(len(data) - window_size):
+        X.append(data[i:(i + window_size)])
+        y.append(data[i + window_size])
+    return np.array(X), np.array(y)
+
+# 标准化
+scaler_leaf = MinMaxScaler()
+scaler_stem = MinMaxScaler()
+
+scaled_data_leaf = scaler_leaf.fit_transform(df_leaf_age["Average Leaf Age"].values.reshape(-1, 1))
+scaled_data_stem = scaler_stem.fit_transform(df_stem_length["Average Stem Length"].values.reshape(-1, 1))
+
+# 创建数据集
+X_leaf, y_leaf = create_dataset(scaled_data_leaf)
+X_stem, y_stem = create_dataset(scaled_data_stem)
+
+X_leaf = X_leaf.reshape((X_leaf.shape[0], X_leaf.shape[1], 1))
+X_stem = X_stem.reshape((X_stem.shape[0], X_stem.shape[1], 1))
+
+# CNN 模型构建
+def build_cnn_model(input_shape):
+    model = Sequential()
+    model.add(Conv1D(filters=64, kernel_size=2, activation='relu', input_shape=input_shape))
+    model.add(MaxPooling1D(pool_size=2))
+    model.add(Flatten())
+    model.add(Dense(50, activation='relu'))
+    model.add(Dense(1))
+    model.compile(optimizer='adam', loss='mean_squared_error')
+    return model
+
+# 训练模型
+model_leaf = build_cnn_model((3, 1))
+model_leaf.fit(X_leaf, y_leaf, epochs=200, batch_size=1, verbose=0)
+
+model_stem = build_cnn_model((3, 1))
+model_stem.fit(X_stem, y_stem, epochs=200, batch_size=1, verbose=0)
+
+# 进行预测
+predict_leaf = model_leaf.predict(X_leaf)
+predict_stem = model_stem.predict(X_stem)
+
+predict_leaf = scaler_leaf.inverse_transform(predict_leaf)
+predict_stem = scaler_stem.inverse_transform(predict_stem)
+
+# 绘制曲线图
+plt.figure(figsize=(12, 6))
+
+# 绘制叶龄曲线图
+plt.subplot(2, 1, 1)
+plt.plot(df_leaf_age['Date'], df_leaf_age['Average Leaf Age'], label='Actual Leaf Age')
+plt.plot(df_leaf_age['Date'][3:], predict_leaf.flatten(), label='Predicted Leaf Age', linestyle='--')
+plt.title('Leaf Age Prediction')
+plt.xlabel('Date')
+plt.ylabel('Average Leaf Age')
+plt.legend()
+
+# 绘制茎长曲线图
+plt.subplot(2, 1, 2)
+plt.plot(df_stem_length['Date'], df_stem_length['Average Stem Length'], label='Actual Stem Length')
+plt.plot(df_stem_length['Date'][3:], predict_stem.flatten(), label='Predicted Stem Length', linestyle='--')
+plt.title('Stem Length Prediction')
+plt.xlabel('Date')
+plt.ylabel('Average Stem Length')
+plt.legend()
+
+plt.tight_layout()
+plt.show()
+
+
+# 计算MSE
+mse_leaf = mean_squared_error(df_leaf_age['Average Leaf Age'][3:], predict_leaf.flatten())
+mse_stem = mean_squared_error(df_stem_length['Average Stem Length'][3:], predict_stem.flatten())
+
+# 计算RMSE
+rmse_leaf = np.sqrt(mse_leaf)
+rmse_stem = np.sqrt(mse_stem)
+
+# 计算MAE
+mae_leaf = mean_absolute_error(df_leaf_age['Average Leaf Age'][3:], predict_leaf.flatten())
+mae_stem = mean_absolute_error(df_stem_length['Average Stem Length'][3:], predict_stem.flatten())
+
+# 计算MAPE
+def mean_absolute_percentage_error(y_true, y_pred):
+    return np.mean(np.abs((y_true - y_pred) / y_true)) * 100
+
+mape_leaf = mean_absolute_percentage_error(df_leaf_age['Average Leaf Age'][3:], predict_leaf.flatten())
+mape_stem = mean_absolute_percentage_error(df_stem_length['Average Stem Length'][3:], predict_stem.flatten())
+
+# 打印评估结果
+print('Leaf Age:')
+print('MSE: {:.3f}'.format(mse_leaf))
+print('RMSE: {:.3f}'.format(rmse_leaf))
+print('MAE: {:.3f}'.format(mae_leaf))
+print('MAPE: {:.3f}%'.format(mape_leaf))
+
+print('Stem Length:')
+print('MSE: {:.3f}'.format(mse_stem))
+print('RMSE: {:.3f}'.format(rmse_stem))
+print('MAE: {:.3f}'.format(mae_stem))
+print('MAPE: {:.3f}%'.format(mape_stem))
+
+# 创建评估图形
+plt.figure(figsize=(12, 6))
+
+# 创建评估图形
+plt.figure(figsize=(8, 6))
+
+# MSE图形
+plt.subplot(2, 2, 1)
+plt.bar(['Leaf Age', 'Stem Length'], [mse_leaf, mse_stem])
+plt.title('Mean Squared Error (MSE)')
+plt.ylabel('MSE')
+
+# RMSE图形
+plt.subplot(2, 2, 2)
+plt.bar(['Leaf Age', 'Stem Length'], [rmse_leaf, rmse_stem])
+plt.title('Root Mean Squared Error (RMSE)')
+plt.ylabel('RMSE')
+
+# MAE图形
+plt.subplot(2, 2, 3)
+plt.bar(['Leaf Age', 'Stem Length'], [mae_leaf, mae_stem])
+plt.title('Mean Absolute Error (MAE)')
+plt.ylabel('MAE')
+
+# MAPE图形
+plt.subplot(2, 2, 4)
+plt.bar(['Leaf Age', 'Stem Length'], [mape_leaf, mape_stem])
+plt.title('Mean Absolute Percentage Error (MAPE)')
+plt.ylabel('MAPE')
+
+plt.tight_layout()
+plt.show()
